@@ -1572,7 +1572,7 @@ except etree.DocumentInvalid as e:
 
 ## 參考資源
 
-- [Odoo 19 Release Notes](https://www.odoo.com/odoo-19-release-notes)
+- [Odoo 19 Release Notes](https://www.odoo.com/documentation/19.0/developer/reference/release_notes.html)
 - [Odoo 19 ORM Changelog](https://www.odoo.com/documentation/19.0/developer/reference/backend/orm/changelog.html)
 - [Odoo 19 ORM API Reference](https://www.odoo.com/documentation/19.0/developer/reference/backend/orm.html)
 - [Odoo 19 Views Reference](https://www.odoo.com/documentation/19.0/developer/reference/backend/views.html)
