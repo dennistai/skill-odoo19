@@ -5,26 +5,31 @@
 ## 目錄
 
 1. [XML 資料檔案格式](#xml-資料檔案格式)
-2. [ir.cron 排程任務](#ircron-排程任務)
-3. [欄位定義 states 參數棄用](#欄位定義-states-參數棄用)
-4. [搜尋視圖 (Search View)](#搜尋視圖-search-view)
-5. [列表視圖 (List View)](#列表視圖-list-view)
-6. [看板視圖無障礙性要求 (Kanban Accessibility)](#看板視圖無障礙性要求-kanban-accessibility)
-7. [郵件範本 (Mail Template)](#郵件範本-mail-template)
-8. [權限群組 (Security Groups)](#權限群組-security-groups)
-9. [SQL 約束](#sql-約束)
-10. [ORM 棄用方法](#orm-棄用方法)
-11. [API 裝飾器棄用](#api-裝飾器棄用)
-12. [track_visibility 棄用](#track_visibility-棄用)
-13. [ir.values 模型移除](#irvalues-模型移除)
-14. [欄位屬性變更](#欄位屬性變更)
-15. [外部 API 端點變更](#外部-api-端點變更)
-16. [Controller 類型變更](#controller-類型變更)
-17. [庫存模組變更](#庫存模組變更)
-18. [環境變數存取棄用](#環境變數存取棄用)
-19. [Domain API 變更](#domain-api-變更)
-20. [新增功能與裝飾器](#新增功能與裝飾器)
-21. [其他常見問題](#其他常見問題)
+2. [attrs 屬性棄用](#attrs-屬性棄用)
+3. [ir.cron 排程任務](#ircron-排程任務)
+4. [欄位定義 states 參數棄用](#欄位定義-states-參數棄用)
+5. [搜尋視圖 (Search View)](#搜尋視圖-search-view)
+6. [列表視圖 (List View)](#列表視圖-list-view)
+7. [看板視圖無障礙性要求 (Kanban Accessibility)](#看板視圖無障礙性要求-kanban-accessibility)
+8. [設定視圖新結構 (Settings View)](#設定視圖新結構-settings-view)
+9. [Chatter 簡化語法](#chatter-簡化語法)
+10. [郵件範本 (Mail Template)](#郵件範本-mail-template)
+11. [權限群組 (Security Groups)](#權限群組-security-groups)
+12. [SQL 約束](#sql-約束)
+13. [ORM 棄用方法](#orm-棄用方法)
+14. [API 裝飾器棄用](#api-裝飾器棄用)
+15. [track_visibility 棄用](#track_visibility-棄用)
+16. [ir.values 模型移除](#irvalues-模型移除)
+17. [res.partner.title 模型移除](#respartnertitle-模型移除)
+18. [欄位屬性變更](#欄位屬性變更)
+19. [外部 API 端點變更](#外部-api-端點變更)
+20. [Controller 類型變更](#controller-類型變更)
+21. [庫存模組變更](#庫存模組變更)
+22. [環境變數存取棄用](#環境變數存取棄用)
+23. [匯入路徑變更](#匯入路徑變更)
+24. [Domain API 變更](#domain-api-變更)
+25. [新增功能與裝飾器](#新增功能與裝飾器)
+26. [其他常見問題](#其他常見問題)
 
 ---
 
@@ -117,6 +122,69 @@ Odoo 19 支援以下兩種 XML 格式：
 - `interval_type` - 間隔類型 (`minutes`, `hours`, `days`, `weeks`, `months`)
 - `nextcall` - 下次執行時間（可選）
 - `user_id` - 執行使用者（可選）
+
+---
+
+## attrs 屬性棄用
+
+### 重要變更
+
+**Odoo 16+ 已不再支援 XML 視圖中的 `attrs` 屬性。** 原本使用 `attrs` 統一設定的 `readonly`、`invisible`、`required` 條件，必須改為獨立的屬性搭配動態表達式。
+
+### 舊的寫法（已棄用）
+
+```xml
+<!-- ❌ 已棄用 - attrs 屬性不再支援 -->
+<field name="partner_id"
+       attrs="{'invisible': [('state', '=', 'done')], 'readonly': [('state', '!=', 'draft')]}"/>
+
+<field name="amount"
+       attrs="{'required': [('state', '=', 'confirmed')]}"/>
+
+<div attrs="{'invisible': [('is_manager', '=', False)]}">
+    <field name="manager_note"/>
+</div>
+```
+
+### 新的寫法（Odoo 16+）
+
+```xml
+<!-- ✅ 正確 - 使用獨立屬性搭配動態表達式 -->
+<field name="partner_id"
+       invisible="state == 'done'"
+       readonly="state != 'draft'"/>
+
+<field name="amount"
+       required="state == 'confirmed'"/>
+
+<div invisible="not is_manager">
+    <field name="manager_note"/>
+</div>
+```
+
+### 語法轉換對照
+
+| 舊語法 (attrs domain) | 新語法 (動態表達式) |
+|----------------------|-------------------|
+| `[('state', '=', 'done')]` | `state == 'done'` |
+| `[('state', '!=', 'draft')]` | `state != 'draft'` |
+| `[('state', 'in', ['confirmed', 'done'])]` | `state in ['confirmed', 'done']` |
+| `[('is_manager', '=', False)]` | `not is_manager` |
+| `[('state', '=', 'done'), ('amount', '>', 0)]` | `state == 'done' and amount > 0` |
+| `['|', ('state', '=', 'a'), ('state', '=', 'b')]` | `state == 'a' or state == 'b'` |
+
+### 注意事項
+
+1. **動態表達式使用 Python 語法**：不再使用 domain 格式的 list of tuples，而是使用類 Python 的布林表達式
+2. **XML 中的特殊字元**：`<` 需寫成 `&lt;`，`>` 需寫成 `&gt;`
+3. **所有 XML 元素均適用**：`<field>`、`<div>`、`<group>`、`<page>` 等元素都使用獨立屬性
+4. **繼承視圖修改**：使用 `<attribute name="invisible">...</attribute>` 修改動態屬性
+
+### 常見錯誤訊息
+
+| 錯誤訊息 | 原因 | 解決方案 |
+|---------|------|---------|
+| `Unknown attribute 'attrs'` | 使用了已棄用的 attrs 屬性 | 將 attrs 拆分為獨立的 `readonly`/`invisible`/`required` 屬性 |
 
 ---
 
@@ -353,6 +421,31 @@ Odoo 18+ 開始，`<tree>` 標籤已改為 `<list>`：
 </list>
 ```
 
+### column_invisible 屬性
+
+**在 list 視圖中，隱藏整個欄位（整列）必須使用 `column_invisible`，而非 `invisible`。**
+
+`invisible` 在 list 視圖中只會隱藏單一儲存格的內容，而 `column_invisible` 會隱藏整個欄位標題和所有列的該欄位。
+
+錯誤示範：
+```xml
+<list>
+    <!-- ❌ invisible 只會隱藏儲存格內容，欄位標題仍會顯示 -->
+    <field name="internal_code" invisible="not is_admin"/>
+</list>
+```
+
+正確做法：
+```xml
+<list>
+    <!-- ✅ column_invisible 會隱藏整個欄位（含標題） -->
+    <field name="internal_code" column_invisible="not is_admin"/>
+
+    <!-- ✅ 也可以用固定值隱藏 -->
+    <field name="debug_info" column_invisible="True"/>
+</list>
+```
+
 ### 按鈕的 role 屬性
 
 帶有 `btn` class 的 `<a>` 標籤建議加上 `role="button"`：
@@ -482,6 +575,123 @@ WARNING odoo.addons.base.models.ir_ui_view: "<a>" tag with "btn" class must have
 - [ ] 所有 `<a class="...btn...">` 元素都有 `role="button"` 屬性
 - [ ] 下拉選單按鈕有 `aria-label` 或 `title` 屬性
 - [ ] 互動元素有適當的文字描述
+
+---
+
+## 設定視圖新結構 (Settings View)
+
+### 重要變更
+
+**Odoo 19 引入新的設定視圖結構**，使用 `<app>`、`<block>` 和 `<setting>` 元素取代舊的巢狀 `<div>` 結構，使設定頁面更語義化且易維護。
+
+### 舊的寫法（不建議）
+
+```xml
+<!-- ❌ 舊的設定視圖結構 -->
+<record id="res_config_settings_view_form" model="ir.ui.view">
+    <field name="name">res.config.settings.view.form.inherit</field>
+    <field name="model">res.config.settings</field>
+    <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+    <field name="arch" type="xml">
+        <xpath expr="//div[hasclass('settings')]" position="inside">
+            <div class="app_settings_block" data-string="My Module" data-key="my_module">
+                <h2>General Settings</h2>
+                <div class="row mt16 o_settings_container">
+                    <div class="col-12 col-lg-6 o_setting_box">
+                        <div class="o_setting_left_pane">
+                            <field name="my_boolean"/>
+                        </div>
+                        <div class="o_setting_right_pane">
+                            <label for="my_boolean"/>
+                            <div class="text-muted">Description here</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </xpath>
+    </field>
+</record>
+```
+
+### 新的寫法（Odoo 19）
+
+```xml
+<!-- ✅ 新的設定視圖結構 -->
+<record id="res_config_settings_view_form" model="ir.ui.view">
+    <field name="name">res.config.settings.view.form.inherit</field>
+    <field name="model">res.config.settings</field>
+    <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+    <field name="arch" type="xml">
+        <xpath expr="//form" position="inside">
+            <app data-string="My Module" data-key="my_module">
+                <block title="General Settings">
+                    <setting string="Enable Feature" help="Description here">
+                        <field name="my_boolean"/>
+                    </setting>
+                    <setting string="API Key" help="Enter your API key">
+                        <field name="api_key"/>
+                    </setting>
+                </block>
+                <block title="Advanced">
+                    <setting string="Debug Mode" help="Enable debug logging">
+                        <field name="debug_mode"/>
+                    </setting>
+                </block>
+            </app>
+        </xpath>
+    </field>
+</record>
+```
+
+### 元素對照
+
+| 舊結構 | 新結構 | 說明 |
+|--------|--------|------|
+| `<div class="app_settings_block">` | `<app>` | 應用層級容器 |
+| `<h2>` + `<div class="o_settings_container">` | `<block title="...">` | 設定區塊 |
+| `<div class="o_setting_box">` + left/right pane | `<setting string="..." help="...">` | 單一設定項目 |
+
+---
+
+## Chatter 簡化語法
+
+### 重要變更
+
+**Odoo 19 支援使用簡化的 `<chatter/>` 標籤**取代舊的多個 `div` 和 widget 組合。
+
+### 舊的寫法（繁瑣）
+
+```xml
+<!-- ❌ 舊的 Chatter 寫法 -->
+<form>
+    <sheet>
+        <!-- 表單內容 -->
+    </sheet>
+    <div class="oe_chatter">
+        <field name="message_follower_ids"/>
+        <field name="activity_ids"/>
+        <field name="message_ids"/>
+    </div>
+</form>
+```
+
+### 新的寫法（Odoo 19）
+
+```xml
+<!-- ✅ 新的 Chatter 簡化語法 -->
+<form>
+    <sheet>
+        <!-- 表單內容 -->
+    </sheet>
+    <chatter/>
+</form>
+```
+
+### 注意事項
+
+1. `<chatter/>` 標籤必須放在 `<sheet>` 之後
+2. 模型必須繼承 `mail.thread`（和可選的 `mail.activity.mixin`）
+3. 簡化語法會自動包含追蹤者、活動和訊息記錄
 
 ---
 
@@ -1105,6 +1315,33 @@ psycopg2.errors.UndefinedTable: relation "ir_values" does not exist
 
 ---
 
+## res.partner.title 模型移除
+
+### 重要變更
+
+**Odoo 19 已移除 `res.partner.title` 模型。** 此模型原本用於儲存聯絡人的稱謂（如「先生」、「女士」、「博士」等）。
+
+### 影響範圍
+
+- 所有參照 `res.partner.title` 的程式碼和 XML 資料都需要移除或替換
+- `res.partner` 上的 `title` 欄位（`Many2one` 至 `res.partner.title`）已不再可用
+
+### 檢查方式
+
+```bash
+# 搜尋所有參照 res.partner.title 的程式碼
+grep -rn "res.partner.title" --include="*.py" --include="*.xml" ./
+```
+
+### 錯誤訊息
+
+```
+KeyError: 'res.partner.title'
+psycopg2.errors.UndefinedTable: relation "res_partner_title" does not exist
+```
+
+---
+
 ## 欄位屬性變更
 
 ### group_operator 重新命名為 aggregator
@@ -1150,6 +1387,56 @@ class MyModel(models.Model):
 | `bool_and` | 布林 AND |
 | `bool_or` | 布林 OR |
 | `array_agg` | 陣列聚合 |
+
+### One2many / Many2many 移除 limit 參數
+
+**從 Odoo 19 開始**，`One2many` 和 `Many2many` 欄位不再支援 `limit` 參數。
+
+#### 舊的寫法（已移除）
+
+```python
+from odoo import models, fields
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    # ❌ 已移除 - limit 參數不再支援
+    order_line_ids = fields.One2many(
+        'sale.order.line', 'order_id',
+        string='訂單明細',
+        limit=80
+    )
+
+    tag_ids = fields.Many2many(
+        'my.tag',
+        string='標籤',
+        limit=50
+    )
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+from odoo import models, fields
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    # ✅ 正確 - 移除 limit 參數
+    order_line_ids = fields.One2many(
+        'sale.order.line', 'order_id',
+        string='訂單明細',
+    )
+
+    tag_ids = fields.Many2many(
+        'my.tag',
+        string='標籤',
+    )
+```
+
+#### 注意事項
+
+如需限制顯示數量，應在視圖層級或查詢時處理，而非在欄位定義中設定。
 
 ---
 
@@ -1346,6 +1633,50 @@ company = self.env.company
 | N/A | `self.env.user` | 使用者記錄 |
 | N/A | `self.env.company` | 當前公司 |
 | N/A | `self.env.companies` | 允許的公司 |
+
+---
+
+## 匯入路徑變更
+
+### 重要變更
+
+**Odoo 19 多個匯入路徑已變更或移除**，升級時需要更新所有受影響的 `import` 語句。
+
+### 匯入路徑對照表
+
+| 舊匯入路徑 | 新匯入路徑 | 說明 |
+|-----------|-----------|------|
+| `from odoo import registry` | `from odoo.modules.registry import Registry` | Registry 類別移至 modules 子模組 |
+| `from odoo.tools.misc import xlsxwriter` | `import xlsxwriter` | xlsxwriter 改為直接匯入第三方套件 |
+| `from odoo.osv import expression` | `from odoo import Domain` | 改用新的 Domain API（見下一章節） |
+| `from odoo.osv.expression import ...` | `from odoo.domain import ...` | expression 模組已棄用 |
+
+### 舊的寫法（已棄用）
+
+```python
+# ❌ 已棄用
+from odoo import registry
+from odoo.tools.misc import xlsxwriter
+from odoo.osv import expression
+```
+
+### 新的寫法（Odoo 19）
+
+```python
+# ✅ 正確
+from odoo.modules.registry import Registry
+import xlsxwriter
+from odoo import Domain
+```
+
+### 檢查方式
+
+```bash
+# 搜尋需要更新的匯入路徑
+grep -rn "from odoo import registry" --include="*.py" ./
+grep -rn "from odoo.tools.misc import xlsxwriter" --include="*.py" ./
+grep -rn "from odoo.osv" --include="*.py" ./
+```
 
 ---
 
@@ -1559,6 +1890,11 @@ except etree.DocumentInvalid as e:
 | `type='json' is deprecated` | Controller 使用已棄用的 `type='json'` | 改用 `type='jsonrpc'` |
 | `KeyError: 'procurement.group'` | 使用已移除的 `procurement.group` 模型 | 改用 `stock.reference`（注意：邏輯有變更） |
 | `/xmlrpc endpoint is deprecated` | 使用已棄用的 XML-RPC API | 改用 `/json/2` API 端點 |
+| `Unknown attribute 'attrs'` | 使用了已棄用的 `attrs` 屬性 | 將 attrs 拆分為獨立的 `readonly`/`invisible`/`required` 動態表達式 |
+| `KeyError: 'res.partner.title'` | 使用已移除的 `res.partner.title` 模型 | 移除所有 `res.partner.title` 相關程式碼 |
+| `ImportError: cannot import name 'registry'` | `from odoo import registry` 匯入路徑已變更 | 改用 `from odoo.modules.registry import Registry` |
+| `ImportError: cannot import name 'xlsxwriter'` | `from odoo.tools.misc import xlsxwriter` 已移除 | 改用 `import xlsxwriter` 直接匯入 |
+| `Unknown field attribute 'limit'` | `One2many`/`Many2many` 的 `limit` 參數已移除 | 移除欄位定義中的 `limit` 參數 |
 
 ---
 

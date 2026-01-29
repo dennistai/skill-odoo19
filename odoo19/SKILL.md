@@ -117,6 +117,9 @@ Use `Read` to access specific reference files when detailed information is neede
 **XML 資料檔案：**
 - `type="html"` 與 `<![CDATA[]]>` 不能同時使用
 
+**attrs 屬性棄用：**
+- `attrs` 屬性已拆分為獨立的 `readonly`/`invisible`/`required` 動態表達式
+
 **ir.cron 排程任務：**
 - 已移除欄位：`numbercall`, `doall`, `active`
 
@@ -127,9 +130,29 @@ Use `Read` to access specific reference files when detailed information is neede
 
 **列表視圖 (List View)：**
 - `<tree>` 標籤已改為 `<list>`
+- 隱藏整列使用 `column_invisible` 而非 `invisible`
+
+**設定視圖 (Settings View)：**
+- 使用新的 `<app>`、`<block>`、`<setting>` 結構
+
+**Chatter：**
+- 支援簡化的 `<chatter/>` 語法取代舊的 `div.oe_chatter` 結構
 
 **SQL 約束：**
 - `_sql_constraints` 已棄用，改用 `models.Constraint`
+
+**欄位屬性：**
+- `One2many`/`Many2many` 已移除 `limit` 參數
+- `group_operator` 改為 `aggregator`
+
+**模型移除：**
+- `ir.values` 已移除
+- `res.partner.title` 已移除
+
+**匯入路徑：**
+- `from odoo import registry` → `from odoo.modules.registry import Registry`
+- `from odoo.tools.misc import xlsxwriter` → `import xlsxwriter`
+- `from odoo.osv` → `from odoo import Domain`
 
 詳細說明請參閱 `references/odoo19-compatibility.md`
 
