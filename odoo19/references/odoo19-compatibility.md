@@ -17,7 +17,14 @@
 11. [API 裝飾器棄用](#api-裝飾器棄用)
 12. [track_visibility 棄用](#track_visibility-棄用)
 13. [ir.values 模型移除](#irvalues-模型移除)
-14. [其他常見問題](#其他常見問題)
+14. [欄位屬性變更](#欄位屬性變更)
+15. [外部 API 端點變更](#外部-api-端點變更)
+16. [Controller 類型變更](#controller-類型變更)
+17. [庫存模組變更](#庫存模組變更)
+18. [環境變數存取棄用](#環境變數存取棄用)
+19. [Domain API 變更](#domain-api-變更)
+20. [新增功能與裝飾器](#新增功能與裝飾器)
+21. [其他常見問題](#其他常見問題)
 
 ---
 
@@ -678,6 +685,145 @@ _constraints = [
 
 ## ORM 棄用方法
 
+### read_group() 已棄用
+
+**從 Odoo 19 開始**，`read_group()` 方法已被棄用，改用 `_read_group()` 進行後端處理，或使用 `formatted_read_group()` 作為格式化的公開 API。
+
+#### 舊的寫法（已棄用）
+
+```python
+# ❌ 已棄用
+result = self.env['sale.order'].read_group(
+    domain=[('state', '=', 'sale')],
+    fields=['partner_id', 'amount_total:sum'],
+    groupby=['partner_id']
+)
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+# ✅ 正確 - 後端使用 _read_group()
+result = self.env['sale.order']._read_group(
+    domain=[('state', '=', 'sale')],
+    groupby=['partner_id'],
+    aggregates=['amount_total:sum']
+)
+
+# ✅ 正確 - 公開 API 使用 formatted_read_group()
+result = self.env['sale.order'].formatted_read_group(
+    domain=[('state', '=', 'sale')],
+    groupby=['partner_id'],
+    aggregates=['amount_total:sum']
+)
+```
+
+#### 新增方法：GROUPING SETS 最佳化
+
+Odoo 19 新增 `_read_grouping_sets()` 和 `formatted_read_grouping_sets()` 方法，可將多個分組請求合併為單一 SQL 查詢，大幅提升效能：
+
+```python
+# ✅ 使用 GROUPING SETS 進行多維度分組
+result = self.env['sale.order']._read_grouping_sets(
+    domain=[('state', '=', 'sale')],
+    groupby=[['partner_id'], ['partner_id', 'user_id']],
+    aggregates=['amount_total:sum']
+)
+```
+
+---
+
+### name_get() 已棄用
+
+**從 Odoo 17 開始**，`name_get()` 方法已被棄用，改為直接讀取 `display_name` 欄位。
+
+#### 舊的寫法（已棄用）
+
+```python
+# ❌ 已棄用
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    def name_get(self):
+        result = []
+        for record in self:
+            name = f'{record.code} - {record.name}'
+            result.append((record.id, name))
+        return result
+```
+
+#### 新的寫法（Odoo 17+）
+
+```python
+# ✅ 正確 - 覆寫 _compute_display_name()
+from odoo import models, api
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    @api.depends('code', 'name')
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = f'{record.code} - {record.name}'
+```
+
+#### 存取方式變更
+
+```python
+# ❌ 舊寫法
+name = record.name_get()[0][1]
+
+# ✅ 新寫法
+name = record.display_name
+```
+
+---
+
+### _flush_search() 已棄用
+
+**從 Odoo 19 開始**，`_flush_search()` 方法已被棄用。欄位的 flush 操作現在由 `execute_query()` 自動處理，基於 `_search()` 及其他底層 ORM 方法在 SQL 物件中放置的元資料。
+
+#### 舊的寫法（已棄用）
+
+```python
+# ❌ 已棄用 - 不需要手動呼叫
+self._flush_search(domain)
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+# ✅ 正確 - 由 execute_query() 自動處理
+# 不需要手動呼叫 flush，ORM 會自動處理
+query = self._search(domain)
+result = self.env.execute_query(query)
+```
+
+---
+
+### inselect 運算子移除
+
+**從 Odoo 19 開始**，內部運算子 `inselect` 已被移除，改用 `in` 搭配 Query 或 SQL 物件。
+
+#### 舊的寫法（已移除）
+
+```python
+# ❌ 已移除
+domain = [('id', 'inselect', subquery)]
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+# ✅ 正確 - 使用 in 搭配 Query 物件
+from odoo.osv.expression import Query
+
+subquery = self.env['other.model']._search([('active', '=', True)])
+domain = [('id', 'in', subquery)]
+```
+
+---
+
 ### _check_recursion() 已棄用
 
 **從 Odoo 18.0 開始**，`_check_recursion()` 方法已被棄用，改用 `_has_cycle()` 方法。
@@ -959,6 +1105,371 @@ psycopg2.errors.UndefinedTable: relation "ir_values" does not exist
 
 ---
 
+## 欄位屬性變更
+
+### group_operator 重新命名為 aggregator
+
+**從 Odoo 18 開始**，欄位的 `group_operator` 屬性已重新命名為 `aggregator`。
+
+#### 舊的寫法（已棄用）
+
+```python
+from odoo import models, fields
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    # ❌ 已棄用
+    amount = fields.Float('金額', group_operator='sum')
+    quantity = fields.Integer('數量', group_operator='avg')
+```
+
+#### 新的寫法（Odoo 18+）
+
+```python
+from odoo import models, fields
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    # ✅ 正確 - 使用 aggregator
+    amount = fields.Float('金額', aggregator='sum')
+    quantity = fields.Integer('數量', aggregator='avg')
+```
+
+#### 可用的聚合運算子
+
+| aggregator 值 | 說明 |
+|--------------|------|
+| `sum` | 加總 |
+| `avg` | 平均 |
+| `min` | 最小值 |
+| `max` | 最大值 |
+| `count` | 計數 |
+| `count_distinct` | 不重複計數 |
+| `bool_and` | 布林 AND |
+| `bool_or` | 布林 OR |
+| `array_agg` | 陣列聚合 |
+
+---
+
+## 外部 API 端點變更
+
+### XML-RPC 和 JSON-RPC 端點已棄用
+
+**重要變更：** Odoo 19 棄用了傳統的 `/xmlrpc`、`/xmlrpc/2` 和 `/jsonrpc` 端點，並以新的 `/json/2` 端點取代。
+
+#### 棄用時程
+
+| 版本 | 狀態 |
+|------|------|
+| Odoo 19.0 | 標記為棄用 |
+| Odoo 19.1 (SaaS) | 移除 |
+| Odoo 20 (on-prem/Odoo.sh) | 完全移除 |
+
+#### 舊的端點（已棄用）
+
+```python
+# ❌ 已棄用 - XML-RPC
+import xmlrpc.client
+common = xmlrpc.client.ServerProxy('http://localhost:8069/xmlrpc/2/common')
+uid = common.authenticate(db, username, password, {})
+
+# ❌ 已棄用 - JSON-RPC
+url = 'http://localhost:8069/jsonrpc'
+```
+
+#### 新的端點（Odoo 19）
+
+```python
+# ✅ 正確 - 使用 JSON-2 API
+import requests
+
+url = 'http://localhost:8069/json/2/res.partner/search_read'
+headers = {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'X-Odoo-Database': 'your_database'  # 多資料庫時需要
+}
+payload = {
+    'domain': [('is_company', '=', True)],
+    'fields': ['name', 'email'],
+    'limit': 10
+}
+response = requests.post(url, json=payload, headers=headers)
+```
+
+### JSON-2 API 主要變更
+
+| 項目 | 舊 API | JSON-2 API |
+|------|--------|------------|
+| 端點格式 | `/xmlrpc/2/object` | `/json/2/<model>/<method>` |
+| 認證方式 | 帳號/密碼 | API 金鑰 (Bearer Token) |
+| 參數傳遞 | 位置參數 | 僅命名參數 |
+| HTTP 狀態碼 | 總是 200 | 有意義的狀態碼 (404, 500 等) |
+| 交易處理 | 可鏈接多個呼叫 | 每次呼叫獨立交易 |
+
+### API 金鑰要求
+
+- 一般使用者的 API 金鑰預設有 90 天期限
+- 管理員可建立永久金鑰
+- 解決雙因素驗證 (2FA) 在機器對機器場景的問題
+
+### 自動生成文件
+
+Odoo 19 在 `/doc` 路徑提供自動生成的 API 文件，可瀏覽欄位、公開方法，並複製範例程式碼。
+
+---
+
+## Controller 類型變更
+
+### type='json' 重新命名為 type='jsonrpc'
+
+**從 Odoo 19 開始**，Controller 的 `type='json'` 已重新命名為 `type='jsonrpc'`。
+
+**注意：** 此變更僅影響自訂 Controller，不受外部 API 端點棄用影響。
+
+#### 舊的寫法（已棄用）
+
+```python
+from odoo import http
+
+class MyController(http.Controller):
+
+    # ❌ 已棄用
+    @http.route('/my/api/endpoint', type='json', auth='user')
+    def my_endpoint(self, **kwargs):
+        return {'status': 'success'}
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+from odoo import http
+
+class MyController(http.Controller):
+
+    # ✅ 正確 - 使用 type='jsonrpc'
+    @http.route('/my/api/endpoint', type='jsonrpc', auth='user')
+    def my_endpoint(self, **kwargs):
+        return {'status': 'success'}
+```
+
+---
+
+## 庫存模組變更
+
+### procurement.group 已移除
+
+**重要變更：** Odoo 19 移除了 `procurement.group` 模型，改用 `stock.reference`。
+
+**警告：** 這不只是名稱變更，內部邏輯也有重大改變。
+
+#### 影響範圍
+
+| 項目 | Odoo 18 及更早版本 | Odoo 19 |
+|------|-------------------|---------|
+| 採購群組模型 | `procurement.group` | `stock.reference` |
+| 補貨報表 UI | 可見「採購群組」欄位 | 已移除該欄位 |
+| MTO 追蹤 | 透過 procurement.group | 透過 stock.reference |
+
+#### 程式碼遷移
+
+```python
+# ❌ Odoo 18 及更早版本
+procurement_group = self.env['procurement.group'].create({
+    'name': self.name,
+    'partner_id': self.partner_id.id,
+})
+
+# ✅ Odoo 19 - 需要根據實際情況調整
+# stock.reference 的使用方式可能不同，請參考官方文件
+```
+
+#### 補貨規則變更
+
+- 「傳播採購群組」設定在 Odoo 19 中已變更
+- 建立新 RFQ（而非加入現有 RFQ）的設定方式不同
+
+### 新增 mrp.production.group 模型
+
+Odoo 19 新增 `mrp.production.group` 模型，用於組織製造訂單的父子結構：
+
+```python
+# ✅ Odoo 19 - 新模型
+production_group = self.env['mrp.production.group'].create({
+    'name': 'Production Group',
+})
+```
+
+### 庫存估價變更
+
+Odoo 19 對自動化/即時庫存估價進行了重大變更。如果您使用庫存估價功能，升級前務必完整了解其影響。
+
+---
+
+## 環境變數存取棄用
+
+### record._cr, _context, _uid 已棄用
+
+**從 Odoo 19 開始**，直接存取 `record._cr`、`record._context`、`record._uid` 已被棄用，應改用 `self.env` 屬性。
+
+#### 舊的寫法（已棄用）
+
+```python
+# ❌ 已棄用
+cursor = self._cr
+context = self._context
+user_id = self._uid
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+# ✅ 正確 - 透過 self.env 存取
+cursor = self.env.cr
+context = self.env.context
+user_id = self.env.uid
+
+# 或使用完整路徑
+user = self.env.user
+company = self.env.company
+```
+
+#### 環境屬性對照
+
+| 舊屬性 | 新屬性 | 說明 |
+|--------|--------|------|
+| `self._cr` | `self.env.cr` | 資料庫游標 |
+| `self._context` | `self.env.context` | 上下文字典 |
+| `self._uid` | `self.env.uid` | 使用者 ID |
+| N/A | `self.env.user` | 使用者記錄 |
+| N/A | `self.env.company` | 當前公司 |
+| N/A | `self.env.companies` | 允許的公司 |
+
+---
+
+## Domain API 變更
+
+### odoo.osv 已棄用
+
+**從 Odoo 19 開始**，`odoo.osv` 模組已被棄用，改用新的 `odoo.domain` 和 `odoo.Domain` API。
+
+#### 舊的寫法（已棄用）
+
+```python
+# ❌ 已棄用
+from odoo.osv import expression
+
+domain1 = [('active', '=', True)]
+domain2 = [('state', '=', 'done')]
+combined = expression.AND([domain1, domain2])
+```
+
+#### 新的寫法（Odoo 19）
+
+```python
+# ✅ 正確 - 使用新的 Domain API
+from odoo.fields import Domain
+# 或
+from odoo import Domain
+
+domain1 = Domain([('active', '=', True)])
+domain2 = Domain([('state', '=', 'done')])
+combined = domain1 & domain2  # AND 運算
+combined_or = domain1 | domain2  # OR 運算
+```
+
+### Domain 最佳化
+
+Odoo 19 在執行 `Fields.search` 方法前會套用 Domain 最佳化：
+
+- `=` 運算子現在等同於 `in`（單一值時）
+- Domain 條件會自動簡化
+
+### _where_calc 變更
+
+```python
+# ❌ 舊寫法
+query = self._where_calc(domain)
+
+# ✅ 新寫法
+query = self._search(domain, bypass_access=True)
+```
+
+### _apply_ir_rules 移除
+
+`_apply_ir_rules` 已從 Odoo 19 移除，規則套用已整合進搜尋方法中。
+
+---
+
+## 新增功能與裝飾器
+
+### @api.private 裝飾器
+
+**Odoo 19 新增** `@api.private` 裝飾器，用於標記方法不可透過 RPC 呼叫。
+
+```python
+from odoo import models, api
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    # ✅ 此方法無法透過 XML-RPC 或 JSON-RPC 呼叫
+    @api.private
+    def internal_computation(self):
+        # 僅供內部使用的邏輯
+        return self._calculate_internal_value()
+
+    # 傳統做法：使用底線前綴
+    def _another_private_method(self):
+        pass
+```
+
+#### 使用場景
+
+- 將現有公開方法改為不可 RPC 呼叫
+- ORM 內部方法
+- 不適合重新命名（加底線）的方法
+
+### PEP-420 原生命名空間
+
+Odoo 19 採用 PEP-420 原生命名空間，允許 Odoo 模組分散在多個目錄中：
+
+- 不再強制需要 `__init__.py` 於命名空間層級
+- 模組可更靈活地分佈於 `PYTHONPATH` 中
+
+### 新增 Domain 運算子
+
+Odoo 19 新增了進階 Domain 運算子以支援複雜查詢邏輯：
+
+```python
+# 可以依據日期部分進行分組
+domain = [('create_date:year', '=', 2025)]
+
+# 支援相關欄位（無儲存）的分組/聚合/排序
+result = self.env['sale.order']._read_group(
+    domain=[],
+    groupby=['partner_id.country_id'],  # 相關欄位
+    aggregates=['amount_total:sum']
+)
+```
+
+### GROUPING SETS 最佳化
+
+Odoo 19 新增 `_read_grouping_sets()` 和 `formatted_read_grouping_sets()` 方法，可將多個分組請求合併為單一 SQL 查詢：
+
+```python
+# ✅ 使用 GROUPING SETS 進行多維度分組
+result = self.env['sale.order']._read_grouping_sets(
+    domain=[('state', '=', 'sale')],
+    groupby=[['partner_id'], ['partner_id', 'user_id']],
+    aggregates=['amount_total:sum']
+)
+```
+
+---
+
 ## 其他常見問題
 
 ### 1. active_id 存取問題
@@ -1040,6 +1551,14 @@ except etree.DocumentInvalid as e:
 | `Unknown field attribute 'track_visibility'` | 使用已棄用的 `track_visibility` 參數 | 改用 `tracking=True` |
 | `KeyError: 'ir.values'` | 使用已移除的 `ir.values` 模型 | 改用 `binding_model_id` 或 `default_get` |
 | `relation "ir_values" does not exist` | 資料庫中找不到 ir_values 表 | 移除所有 ir.values 相關程式碼 |
+| `DeprecationWarning: read_group is deprecated` | 使用已棄用的 `read_group()` 方法 | 改用 `_read_group()` 或 `formatted_read_group()` |
+| `DeprecationWarning: name_get is deprecated` | 使用已棄用的 `name_get()` 方法 | 改用 `display_name` 欄位或覆寫 `_compute_display_name()` |
+| `Unknown field attribute 'group_operator'` | 使用已重新命名的 `group_operator` 參數 | 改用 `aggregator` |
+| `DeprecationWarning: odoo.osv is deprecated` | 使用已棄用的 `odoo.osv` 模組 | 改用 `odoo.fields.Domain` 或 `odoo.Domain` |
+| `DeprecationWarning: _cr is deprecated` | 使用已棄用的 `record._cr` | 改用 `self.env.cr` |
+| `type='json' is deprecated` | Controller 使用已棄用的 `type='json'` | 改用 `type='jsonrpc'` |
+| `KeyError: 'procurement.group'` | 使用已移除的 `procurement.group` 模型 | 改用 `stock.reference`（注意：邏輯有變更） |
+| `/xmlrpc endpoint is deprecated` | 使用已棄用的 XML-RPC API | 改用 `/json/2` API 端點 |
 
 ---
 
@@ -1053,6 +1572,10 @@ except etree.DocumentInvalid as e:
 
 ## 參考資源
 
-- [Odoo 19 Release Notes](https://www.odoo.com/documentation/19.0/developer/reference/release_notes.html)
-- [Odoo Views Reference](https://www.odoo.com/documentation/19.0/developer/reference/backend/views.html)
-- [Odoo ORM Reference](https://www.odoo.com/documentation/19.0/developer/reference/backend/orm.html)
+- [Odoo 19 Release Notes](https://www.odoo.com/odoo-19-release-notes)
+- [Odoo 19 ORM Changelog](https://www.odoo.com/documentation/19.0/developer/reference/backend/orm/changelog.html)
+- [Odoo 19 ORM API Reference](https://www.odoo.com/documentation/19.0/developer/reference/backend/orm.html)
+- [Odoo 19 Views Reference](https://www.odoo.com/documentation/19.0/developer/reference/backend/views.html)
+- [Odoo 19 External JSON-2 API](https://www.odoo.com/documentation/19.0/developer/reference/external_api.html)
+- [Odoo 19 External RPC API (Legacy)](https://www.odoo.com/documentation/19.0/developer/reference/external_rpc_api.html)
+- [Odoo Migration Guide (Ksolves)](https://www.ksolves.com/blog/odoo/how-to-migrate-from-odoo-18-to-odoo-19-step-by-step-guide)
